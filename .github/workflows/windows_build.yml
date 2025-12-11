@@ -1,359 +1,44 @@
-name: Flutter Windows Release Pipeline
+name: Windows Flutter Build
 
 on:
   push:
-    branches: [main, develop]
-    tags:
-      - 'v*'
+    branches:
+      - main  # Adjust this to your default branch, e.g., 'main' or 'master'
   pull_request:
-    branches: [main]
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Release version (e.g., 1.0.0)'
-        required: false
-
-env:
-  FLUTTER_VERSION: '3.27.0'
-  APP_NAME: 'MyApp'
+    branches:
+      - main
 
 jobs:
-  # Static analysis and testing
-  analyze:
-    name: Code Quality Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: 'stable'
-          cache: true
-      
-      - name: Install dependencies
-        run: |
-          flutter pub get || flutter pub get --legacy-peer-deps || true
-          if [ $? -ne 0 ]; then
-            echo "Dependency resolution failed. Attempting automatic fix..."
-            # Auto-fix intl version conflict
-            sed -i 's/intl: \^0\.20\./intl: ^0.19./g' pubspec.yaml || true
-            flutter pub get
-          fi
-      
-      - name: Check for outdated dependencies
-        run: flutter pub outdated || true
-        continue-on-error: true
-      
-      - name: Verify formatting
-        run: dart format --set-exit-if-changed .
-        continue-on-error: true
-      
-      - name: Analyze code (warnings allowed)
-        run: |
-          flutter analyze --no-fatal-infos --no-fatal-warnings 2>&1 | tee analyze_output.txt
-          echo "Analysis complete. Review output for improvements."
-        continue-on-error: true
-      
-      - name: Check for critical errors
-        run: |
-          if grep -q "error •" analyze_output.txt; then
-            echo "Critical errors found in analysis!"
-            exit 1
-          fi
-          echo "No critical errors found."
-      
-      - name: Run tests
-        run: flutter test --coverage
-        continue-on-error: true
-      
-      - name: Upload coverage
-        if: always()
-        uses: codecov/codecov-action@v3
-        with:
-          files: ./coverage/lcov.info
-        continue-on-error: true
-      
-      - name: Upload analysis report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: analysis-report
-          path: analyze_output.txt
-          retention-days: 30
-
-  # Optional: Auto-fix deprecations (manual trigger)
-  fix-deprecations:
-    name: Fix Deprecation Warnings
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
-      
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: 'stable'
-          cache: true
-      
-      - name: Install dependencies
-        run: |
-          Get-Content pubspec.yaml | ForEach-Object { $_ -replace 'intl: \^0\.20\.', 'intl: ^0.19.' } | Set-Content pubspec.yaml
-          flutter pub get
-      
-      - name: Fix withOpacity deprecations
-        run: |
-          echo "Replacing withOpacity with withValues..."
-          find lib -name "*.dart" -type f -exec sed -i 's/\.withOpacity(\([^)]*\))/.withValues(alpha: \1)/g' {} +
-          
-      - name: Fix Color component deprecations
-        run: |
-          echo "Fixing deprecated Color accessors..."
-          # This is a placeholder - actual fixes require more sophisticated parsing
-          echo "Manual review recommended for .red, .green, .blue, .value deprecations"
-      
-      - name: Apply dart fix
-        run: dart fix --apply
-      
-      - name: Format code
-        run: dart format .
-      
-      - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v5
-        with:
-          commit-message: "chore: fix deprecation warnings"
-          title: "Automated: Fix Deprecation Warnings"
-          body: |
-            This PR automatically fixes deprecation warnings found in the codebase:
-            - Replaced `withOpacity()` with `withValues(alpha:)`
-            - Applied `dart fix --apply` for other issues
-            - Formatted code with `dart format`
-            
-            Please review changes carefully before merging.
-          branch: auto-fix-deprecations
-          delete-branch: true
-
-  # Build Windows release
-  build-windows:
-    name: Build Windows Release
-    needs: analyze
+  build:
     runs-on: windows-latest
     
     steps:
-      - uses: actions/checkout@v4
-      
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: 'stable'
-          cache: true
-      
-      - name: Install dependencies
-        run: |
-          # Fix intl version conflict
-          sed -i 's/intl: \^0\.20\./intl: ^0.19./g' pubspec.yaml
-          flutter pub get
-      
-      - name: Configure app version
-        shell: pwsh
-        run: |
-          if ("${{ github.event.inputs.version }}" -ne "") {
-            $version = "${{ github.event.inputs.version }}"
-          } elseif ("${{ github.ref }}" -match "refs/tags/v(.*)") {
-            $version = $matches[1]
-          } else {
-            $version = "1.0.0+${{ github.run_number }}"
-          }
-          echo "APP_VERSION=$version" >> $env:GITHUB_ENV
-          echo "Building version: $version"
-      
-      - name: Build Windows Release
-        run: flutter build windows --release --build-name=${{ env.APP_VERSION }}
-      
-      - name: Create installer with Inno Setup
-        shell: pwsh
-        run: |
-          # Download Inno Setup
-          Invoke-WebRequest -Uri "https://jrsoftware.org/download.php/is.exe" -OutFile "innosetup.exe"
-          Start-Process -FilePath ".\innosetup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-" -Wait
-          
-          # Create Inno Setup script
-          $scriptContent = @"
-          #define MyAppName "${{ env.APP_NAME }}"
-          #define MyAppVersion "${{ env.APP_VERSION }}"
-          #define MyAppPublisher "Your Company"
-          #define MyAppURL "https://yourcompany.com"
-          #define MyAppExeName "${{ env.APP_NAME }}.exe"
-          
-          [Setup]
-          AppId={{YOUR-GUID-HERE}
-          AppName={#MyAppName}
-          AppVersion={#MyAppVersion}
-          AppPublisher={#MyAppPublisher}
-          AppPublisherURL={#MyAppURL}
-          AppSupportURL={#MyAppURL}
-          AppUpdatesURL={#MyAppURL}
-          DefaultDirName={autopf}\{#MyAppName}
-          DisableProgramGroupPage=yes
-          LicenseFile=LICENSE
-          OutputDir=build\windows\installer
-          OutputBaseFilename={#MyAppName}-{#MyAppVersion}-setup
-          Compression=lzma
-          SolidCompression=yes
-          WizardStyle=modern
-          ArchitecturesAllowed=x64
-          ArchitecturesInstallIn64BitMode=x64
-          
-          [Languages]
-          Name: "english"; MessagesFile: "compiler:Default.isl"
-          
-          [Tasks]
-          Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
-          
-          [Files]
-          Source: "build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-          
-          [Icons]
-          Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-          Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
-          
-          [Run]
-          Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
-          "@
-          
-          $scriptContent | Out-File -FilePath "installer.iss" -Encoding UTF8
-          
-          # Run Inno Setup
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "installer.iss"
-      
-      - name: Create portable ZIP
-        shell: pwsh
-        run: |
-          Compress-Archive -Path "build\windows\x64\runner\Release\*" `
-                          -DestinationPath "build\windows\${{ env.APP_NAME }}-${{ env.APP_VERSION }}-portable.zip"
-      
-      - name: Sign executables (optional)
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
-        shell: pwsh
-        run: |
-          # Add code signing here if you have a certificate
-          # Example:
-          # signtool sign /f certificate.pfx /p ${{ secrets.CERT_PASSWORD }} /tr http://timestamp.digicert.com /td sha256 /fd sha256 "build\windows\x64\runner\Release\${{ env.APP_NAME }}.exe"
-          echo "Code signing would happen here"
-      
-      - name: Generate checksums
-        shell: pwsh
-        run: |
-          $installer = Get-ChildItem "build\windows\installer\*.exe" | Select-Object -First 1
-          $portable = Get-ChildItem "build\windows\*.zip" | Select-Object -First 1
-          
-          $installerHash = (Get-FileHash $installer -Algorithm SHA256).Hash
-          $portableHash = (Get-FileHash $portable -Algorithm SHA256).Hash
-          
-          @"
-          SHA256 Checksums
-          ================
-          Installer: $installerHash
-          Portable:  $portableHash
-          "@ | Out-File -FilePath "build\windows\checksums.txt"
-      
-      - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-installer
-          path: build/windows/installer/*.exe
-          retention-days: 30
-      
-      - name: Upload portable artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-portable
-          path: build/windows/*-portable.zip
-          retention-days: 30
-      
-      - name: Upload checksums
-        uses: actions/upload-artifact@v4
-        with:
-          name: checksums
-          path: build/windows/checksums.txt
-          retention-days: 30
-
-  # Create GitHub Release for tags
-  release:
-    name: Create Release
-    needs: build-windows
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
     
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-      
-      - name: Extract version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-      
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          name: Release v${{ steps.version.outputs.VERSION }}
-          draft: false
-          prerelease: false
-          generate_release_notes: true
-          files: |
-            artifacts/windows-installer/*.exe
-            artifacts/windows-portable/*.zip
-            artifacts/checksums/checksums.txt
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # Optional: Deploy to cloud storage
-  deploy:
-    name: Deploy to Storage
-    needs: build-windows
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    # Step 1: Checkout the code
+    - name: Checkout code
+      uses: actions/checkout@v2
     
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-      
-      # Example: Deploy to AWS S3
-      - name: Configure AWS credentials
-        if: false  # Enable when ready
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-      
-      - name: Upload to S3
-        if: false  # Enable when ready
-        run: |
-          aws s3 sync artifacts/ s3://your-bucket/releases/ --acl public-read
-      
-      # Example: Deploy to Azure Blob Storage
-      - name: Upload to Azure
-        if: false  # Enable when ready
-        uses: azure/CLI@v1
-        with:
-          inlineScript: |
-            az storage blob upload-batch \
-              --account-name youraccount \
-              --destination releases \
-              --source artifacts/ \
-              --auth-mode login
+    # Step 2: Set up Flutter SDK
+    - name: Set up Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.0.0'  # Specify the Flutter version you need, or use latest
+
+    # Step 3: Install dependencies
+    - name: Install dependencies
+      run: flutter pub get
+    
+    # Step 4: Verify Flutter installation and environment
+    - name: Flutter doctor
+      run: flutter doctor
+    
+    # Step 5: Build the Windows EXE
+    - name: Build Windows EXE
+      run: flutter build windows --release
+
+    # Step 6: Upload the built EXE as an artifact
+    - name: Upload Windows EXE
+      uses: actions/upload-artifact@v2
+      with:
+        name: windows-exe
+        path: build/windows/runner/Release/*.exe  # This is the path where the EXE is generated
