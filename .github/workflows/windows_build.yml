@@ -1,5 +1,7 @@
 name: Flutter Desktop CI/CD
 
+# This workflow builds and tests a Flutter desktop application for Linux and Windows.
+
 on:
   push:
     branches: [main]
