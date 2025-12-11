@@ -1,50 +1,31 @@
-name: Windows Build
+# .github/workflows/build-windows.yml
+name: Build Flutter Windows
 
 on:
   push:
-    branches: [ main ]
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
-  build-windows:
+  build:
     runs-on: windows-latest
-
     steps:
-      # 1️⃣ Checkout سورس کد
       - uses: actions/checkout@v4
-
-      # 2️⃣ نصب Flutter
+      
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          architecture: x64
 
-      # 3️⃣ فعال کردن Windows Desktop
-      - run: flutter config --enable-windows-desktop
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
 
-      # 4️⃣ دریافت dependencies
-      - run: flutter pub get
+      - name: Build Windows executable
+        run: flutter build windows --release
 
-      # 5️⃣ بررسی وضعیت
-      - run: flutter doctor -v
-
-      # 6️⃣ ساخت برنامه Windows Release
-      - run: flutter build windows --release
-
-      # 7️⃣ پیدا کردن مسیر دقیق Release
-      - name: Determine Windows Release Path
-        id: release-path
-        run: |
-          if [ -d "build/windows/runner/Release/x64" ]; then
-            echo "RELEASE_PATH=build/windows/runner/Release/x64" >> $GITHUB_ENV
-          else
-            echo "RELEASE_PATH=build/windows/runner/Release" >> $GITHUB_ENV
-          fi
-
-      # 8️⃣ لیست محتویات فولدر برای اطمینان
-      - run: dir $Env:RELEASE_PATH
-
-      # 9️⃣ آپلود Artifact
-      - uses: actions/upload-artifact@v4
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: windows-release
-          path: $Env:RELEASE_PATH
+          name: myapp-windows
+          path: build/windows/x64/runner/Release/
