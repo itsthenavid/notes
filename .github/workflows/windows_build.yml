@@ -36,9 +36,9 @@ jobs:
     - name: Build Windows EXE
       run: flutter build windows --release
 
-    # Step 6: Upload the built EXE as an artifact
+    # Step 6: Upload the built EXE as an artifact using v3
     - name: Upload Windows EXE
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: windows-exe
         path: build/windows/runner/Release/*.exe  # This is the path where the EXE is generated
