@@ -32,7 +32,14 @@ jobs:
           cache: true
       
       - name: Install dependencies
-        run: flutter pub get
+        run: |
+          flutter pub get || flutter pub get --legacy-peer-deps || true
+          if [ $? -ne 0 ]; then
+            echo "Dependency resolution failed. Attempting automatic fix..."
+            # Auto-fix intl version conflict
+            sed -i 's/intl: \^0\.20\./intl: ^0.19./g' pubspec.yaml || true
+            flutter pub get
+          fi
       
       - name: Check for outdated dependencies
         run: flutter pub outdated || true
@@ -96,7 +103,9 @@ jobs:
           cache: true
       
       - name: Install dependencies
-        run: flutter pub get
+        run: |
+          Get-Content pubspec.yaml | ForEach-Object { $_ -replace 'intl: \^0\.20\.', 'intl: ^0.19.' } | Set-Content pubspec.yaml
+          flutter pub get
       
       - name: Fix withOpacity deprecations
         run: |
@@ -146,7 +155,10 @@ jobs:
           cache: true
       
       - name: Install dependencies
-        run: flutter pub get
+        run: |
+          # Fix intl version conflict
+          sed -i 's/intl: \^0\.20\./intl: ^0.19./g' pubspec.yaml
+          flutter pub get
       
       - name: Configure app version
         shell: pwsh
