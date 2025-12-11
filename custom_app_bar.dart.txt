@@ -1,0 +1,395 @@
+import 'dart:ui';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../theme/colors.dart';
+import '../constants/app_constants.dart';
+
+class CustomAppBar extends StatefulWidget implements PreferredSizeWidget {
+  final String title;
+  final List<Widget>? actions;
+  final bool showBackButton;
+  final VoidCallback? onBackPressed;
+  final ScrollController? scrollController;
+  final bool updateStatusBar;
+  final double elevation;
+  final Color? backgroundColor;
+  final TextStyle? titleStyle;
+
+  // Constants specific to this widget
+  static const double height = 74.0;
+  static const double _cornerRadius = 28.0;
+  static const double _scrollThreshold = 80.0;
+  static const double _minBlur = 10.0;
+  static const double _maxBlur = 26.0;
+
+  const CustomAppBar({
+    super.key,
+    required this.title,
+    this.actions,
+    this.showBackButton = false,
+    this.onBackPressed,
+    this.scrollController,
+    this.updateStatusBar = true,
+    this.elevation = 0.0,
+    this.backgroundColor,
+    this.titleStyle,
+  });
+
+  static double totalHeight(BuildContext context) {
+    return height + MediaQuery.of(context).padding.top;
+  }
+
+  @override
+  State<CustomAppBar> createState() => _CustomAppBarState();
+
+  @override
+  Size get preferredSize => const Size.fromHeight(height);
+}
+
+class _CustomAppBarState extends State<CustomAppBar> {
+  final ValueNotifier<double> _scrollProgress = ValueNotifier<double>(0.0);
+
+  @override
+  void initState() {
+    super.initState();
+    widget.scrollController?.addListener(_onScroll);
+    // Initial check in case we start scrolled down
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
+  }
+
+  @override
+  void didUpdateWidget(covariant CustomAppBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scrollController != widget.scrollController) {
+      oldWidget.scrollController?.removeListener(_onScroll);
+      widget.scrollController?.addListener(_onScroll);
+      _onScroll(); // Check new controller position immediately
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.scrollController?.removeListener(_onScroll);
+    _scrollProgress.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (widget.scrollController == null ||
+        !widget.scrollController!.hasClients) {
+      return;
+    }
+
+    final offset = widget.scrollController!.offset;
+    final progress = (offset / CustomAppBar._scrollThreshold).clamp(0.0, 1.0);
+
+    // Debounce unnecessary updates
+    if ((_scrollProgress.value - progress).abs() > 0.01) {
+      _scrollProgress.value = progress;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final statusBarHeight = MediaQuery.of(context).padding.top;
+    final totalHeight = CustomAppBar.height + statusBarHeight;
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: _getSystemOverlayStyle(isDark),
+      child: SizedBox(
+        height: totalHeight,
+        child: Stack(
+          children: [
+            // Background Layer
+            Positioned.fill(
+              child: RepaintBoundary(
+                child: ValueListenableBuilder<double>(
+                  valueListenable: _scrollProgress,
+                  builder: (context, progress, child) {
+                    return _AppBarBackground(
+                      isDark: isDark,
+                      progress: progress,
+                      backgroundColor: widget.backgroundColor,
+                    );
+                  },
+                ),
+              ),
+            ),
+            // Content Layer
+            _AppBarContent(
+              statusBarHeight: statusBarHeight,
+              isDark: isDark,
+              showBackButton: widget.showBackButton,
+              onBackPressed: widget.onBackPressed,
+              title: widget.title,
+              titleStyle: widget.titleStyle,
+              actions: widget.actions,
+              scrollProgress: _scrollProgress,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  SystemUiOverlayStyle _getSystemOverlayStyle(bool isDark) {
+    return (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
+        .copyWith(statusBarColor: Colors.transparent);
+  }
+}
+
+class _AppBarBackground extends StatelessWidget {
+  final bool isDark;
+  final double progress;
+  final Color? backgroundColor;
+
+  const _AppBarBackground({
+    required this.isDark,
+    required this.progress,
+    this.backgroundColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final blur = progress == 0
+        ? 0.0
+        : lerpDouble(CustomAppBar._minBlur, CustomAppBar._maxBlur, progress) ??
+            10;
+
+    final radius = lerpDouble(
+      CustomAppBar._cornerRadius,
+      CustomAppBar._cornerRadius - 6,
+      progress,
+    )!
+        .clamp(12.0, CustomAppBar._cornerRadius);
+
+    final baseColor = backgroundColor ??
+        (isDark ? AppColors.darkSurfacePrimary : AppColors.lightSurfacePrimary);
+
+    final tintOpacity = isDark
+        ? lerpDouble(0.010, 0.20, progress)!
+        : lerpDouble(0.90, 0.100, progress)!;
+
+    final borderColor =
+        (isDark ? AppColors.darkDivider : AppColors.lightDivider)
+            .withOpacity(0.15 + progress * 0.25);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.vertical(bottom: Radius.circular(radius)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(
+          sigmaX: blur > 0 ? blur : 0.001,
+          sigmaY: blur > 0 ? blur : 0.001,
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: baseColor.withOpacity(tintOpacity),
+            border: Border(
+              bottom: BorderSide(color: borderColor, width: 1.25),
+            ),
+            boxShadow: progress > 0
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(
+                        isDark ? progress * 0.3 : progress * 0.05,
+                      ),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : null,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AppBarContent extends StatelessWidget {
+  final double statusBarHeight;
+  final bool isDark;
+  final bool showBackButton;
+  final VoidCallback? onBackPressed;
+  final String title;
+  final TextStyle? titleStyle;
+  final List<Widget>? actions;
+  final ValueNotifier<double> scrollProgress;
+
+  const _AppBarContent({
+    required this.statusBarHeight,
+    required this.isDark,
+    required this.showBackButton,
+    this.onBackPressed,
+    required this.title,
+    this.titleStyle,
+    this.actions,
+    required this.scrollProgress,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      top: statusBarHeight,
+      left: 0,
+      right: 0,
+      height: CustomAppBar.height,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 18),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            if (showBackButton) ...[
+              _GlassBackButton(
+                isDark: isDark,
+                onTap: onBackPressed ?? () => Navigator.maybePop(context),
+              ),
+              const SizedBox(width: 14),
+            ],
+            Expanded(
+              child: ValueListenableBuilder<double>(
+                valueListenable: scrollProgress,
+                builder: (context, progress, _) {
+                  return _AnimatedTitle(
+                    title: title,
+                    isDark: isDark,
+                    progress: progress,
+                    showBackButton: showBackButton,
+                    style: titleStyle,
+                  );
+                },
+              ),
+            ),
+            if (actions != null) ...[
+              Row(mainAxisSize: MainAxisSize.min, children: actions!),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AnimatedTitle extends StatelessWidget {
+  final String title;
+  final bool isDark;
+  final double progress;
+  final bool showBackButton;
+  final TextStyle? style;
+
+  const _AnimatedTitle({
+    required this.title,
+    required this.isDark,
+    required this.progress,
+    required this.showBackButton,
+    this.style,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final titleOpacity =
+        showBackButton ? (progress * 2.5).clamp(0.0, 1.0) : 1.0;
+
+    if (titleOpacity == 0) return const SizedBox.shrink();
+
+    final defaultStyle = Theme.of(context).textTheme.titleLarge?.copyWith(
+          fontWeight: FontWeight.w800,
+          fontSize: 20,
+          color: isDark ? AppColors.darkText : AppColors.lightText,
+        );
+
+    return Opacity(
+      opacity: titleOpacity,
+      child: Text(
+        title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: style ?? defaultStyle,
+      ),
+    );
+  }
+}
+
+class _GlassBackButton extends StatefulWidget {
+  final bool isDark;
+  final VoidCallback onTap;
+
+  const _GlassBackButton({
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  State<_GlassBackButton> createState() => _GlassBackButtonState();
+}
+
+class _GlassBackButtonState extends State<_GlassBackButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: AppConstants.shortDuration,
+      vsync: this,
+    );
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fgColor = widget.isDark ? AppColors.darkText : AppColors.lightText;
+    final bgColor = widget.isDark
+        ? Colors.white.withOpacity(0.08)
+        : Colors.black.withOpacity(0.04);
+
+    final borderColor =
+        (widget.isDark ? Colors.white : Colors.black).withOpacity(0.08);
+
+    return Semantics(
+      label: 'Back', // Consider using localization here
+      button: true,
+      child: ScaleTransition(
+        scale: _scaleAnimation,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              HapticFeedback.lightImpact();
+              widget.onTap();
+            },
+            onTapDown: (_) => _controller.forward(),
+            onTapUp: (_) => _controller.reverse(),
+            onTapCancel: () => _controller.reverse(),
+            borderRadius: BorderRadius.circular(13),
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: bgColor,
+                borderRadius: BorderRadius.circular(13),
+                border: Border.all(color: borderColor, width: 0.5),
+              ),
+              child: Icon(
+                Icons.arrow_back_ios_new_rounded,
+                size: 16,
+                color: fgColor,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
