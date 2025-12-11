@@ -16,10 +16,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@v4
         with:
-          channel: 'stable'  # همیشه آخرین نسخه stable رو استفاده می‌کنه
-          cache: true  # کشینگ برای سرعت بیشتر
+          channel: 'stable'
+          cache: true  # 
 
       - name: Install Linux dependencies
         run: |
@@ -27,7 +27,7 @@ jobs:
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libsecret-1-dev libjsoncpp-dev
 
       - name: Restore pub cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.pub-cache
@@ -59,14 +59,14 @@ jobs:
           zip -r ../../../flutter-app-linux.zip .
 
       - name: Upload Linux artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: linux-build
           path: build/flutter-app-linux.zip
 
       - name: Release Linux build
         if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v4
         with:
           files: build/flutter-app-linux.zip
 
@@ -77,13 +77,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@v4
         with:
           channel: 'stable'
           cache: true
 
       - name: Restore pub cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~\.pub-cache
@@ -115,13 +115,13 @@ jobs:
           Compress-Archive -Path * -DestinationPath ..\..\..\flutter-app-windows.zip
 
       - name: Upload Windows artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: windows-build
           path: build\flutter-app-windows.zip
 
       - name: Release Windows build
         if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v4
         with:
           files: build\flutter-app-windows.zip
