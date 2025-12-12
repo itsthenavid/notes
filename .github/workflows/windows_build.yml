@@ -1,44 +1,65 @@
-name: Windows Flutter Build
+name: Build Windows App
 
 on:
   push:
-    branches:
-      - main  # Adjust this to your default branch, e.g., 'main' or 'master'
+    branches: [ main, master, develop ]
   pull_request:
-    branches:
-      - main
+    branches: [ main, master, develop ]
+  workflow_dispatch:  # Allows manual trigger from Actions tab
 
 jobs:
-  build:
+  build-windows:
     runs-on: windows-latest
     
     steps:
-    
-    # Step 1: Checkout the code
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
     
-    # Step 2: Set up Flutter SDK
-    - name: Set up Flutter
+    - name: Setup Flutter
       uses: subosito/flutter-action@v2
       with:
-        flutter-version: '3.0.0'  # Specify the Flutter version you need, or use latest
-
-    # Step 3: Install dependencies
-    - name: Install dependencies
+        flutter-version: '3.24.5'  # Use stable version
+        channel: 'stable'
+        cache: true
+    
+    - name: Verify Flutter installation
+      run: |
+        flutter --version
+        flutter doctor -v
+    
+    - name: Remove Rive dependency temporarily
+      shell: pwsh
+      run: |
+        $pubspec = Get-Content pubspec.yaml -Raw
+        $pubspec = $pubspec -replace '  rive:.*\n', '  # rive: removed for build\n'
+        Set-Content pubspec.yaml $pubspec
+    
+    - name: Get dependencies
       run: flutter pub get
     
-    # Step 4: Verify Flutter installation and environment
-    - name: Flutter doctor
-      run: flutter doctor
+    - name: Clean build
+      run: flutter clean
     
-    # Step 5: Build the Windows EXE
-    - name: Build Windows EXE
+    - name: Build Windows app
       run: flutter build windows --release
-
-    # Step 6: Upload the built EXE as an artifact using v4
-    - name: Upload Windows EXE
+    
+    - name: Create build artifact
+      shell: pwsh
+      run: |
+        # Create a zip of the build output
+        Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath notes-windows.zip
+    
+    - name: Upload Windows build artifact
       uses: actions/upload-artifact@v4
       with:
-        name: windows-exe
-        path: build/windows/runner/Release/*.exe  # This is the path where the EXE is generated
+        name: windows-build
+        path: notes-windows.zip
+        retention-days: 30
+    
+    - name: Upload build directory (for debugging)
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs
+        path: build/
+        retention-days: 7
