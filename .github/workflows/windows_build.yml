@@ -18,7 +18,6 @@ jobs:
     - name: Setup Flutter
       uses: subosito/flutter-action@v2
       with:
-        flutter-version: '3.24.5'  # Use stable version
         channel: 'stable'
         cache: true
     
@@ -27,10 +26,11 @@ jobs:
         flutter --version
         flutter doctor -v
     
-    - name: Remove Rive dependency temporarily
+    - name: Fix pubspec.yaml for build
       shell: pwsh
       run: |
         $pubspec = Get-Content pubspec.yaml -Raw
+        # Remove Rive dependency to avoid Windows build errors
         $pubspec = $pubspec -replace '  rive:.*\n', '  # rive: removed for build\n'
         Set-Content pubspec.yaml $pubspec
     
